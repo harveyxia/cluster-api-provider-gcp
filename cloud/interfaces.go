@@ -21,9 +21,10 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	corev1 "k8s.io/api/core/v1"
-	infrav1 "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capierrors "sigs.k8s.io/cluster-api/errors"
+
+	infrav1 "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 )
 
 // Cloud alias for cloud.Cloud interface.
@@ -95,4 +96,19 @@ type MachineSetter interface {
 type Machine interface {
 	MachineGetter
 	MachineSetter
+}
+
+type MachinePoolSetter interface {
+}
+
+type MachinePoolGetter interface {
+	Client
+	Name() string
+	Zone() string
+	GetBootstrapData(ctx context.Context) (string, error)
+}
+
+type MachinePool interface {
+	MachinePoolGetter
+	MachinePoolSetter
 }

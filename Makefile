@@ -15,6 +15,9 @@
 # If you update this file, please follow
 # https://www.thapaliya.com/en/writings/well-documented-makefiles/
 
+# Disable parallel Makefile builds, parallelism breaks codegeneration and other targets
+.NOTPARALLEL:
+
 # Ensure Make is run with bash shell as some syntax below is bash-specific
 SHELL:=/usr/bin/env bash
 
@@ -315,6 +318,7 @@ generate: ## Generate code
 generate-go: $(CONTROLLER_GEN) $(CONVERSION_GEN) ## Runs Go related generate targets
 	$(CONTROLLER_GEN) \
 		paths=./api/... \
+		paths=./exp/api/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 	$(CONVERSION_GEN) \
 		--input-dirs=./api/v1alpha3 \
@@ -334,6 +338,7 @@ generate-go: $(CONTROLLER_GEN) $(CONVERSION_GEN) ## Runs Go related generate tar
 generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
 		paths=./api/... \
+		paths=./exp/api/... \
 		crd:crdVersions=v1 \
 		rbac:roleName=manager-role \
 		output:crd:dir=$(CRD_ROOT) \

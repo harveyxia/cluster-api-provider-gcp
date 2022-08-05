@@ -2,6 +2,9 @@ module sigs.k8s.io/cluster-api-provider-gcp
 
 go 1.18
 
+// XXX(eac): eac local changes
+replace github.com/GoogleCloudPlatform/k8s-cloud-provider => ../gcp-k8s-cloud-provider
+
 require (
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.19.0
 	github.com/google/go-cmp v0.5.8
@@ -11,7 +14,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/mod v0.5.1
 	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e
-	google.golang.org/api v0.90.0
+	google.golang.org/api v0.91.0
 	k8s.io/api v0.23.6
 	k8s.io/apimachinery v0.23.6
 	k8s.io/client-go v0.23.6
