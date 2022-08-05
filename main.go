@@ -31,16 +31,19 @@ import (
 	cgrecord "k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
-	infrav1alpha3 "sigs.k8s.io/cluster-api-provider-gcp/api/v1alpha3"
-	infrav1alpha4 "sigs.k8s.io/cluster-api-provider-gcp/api/v1alpha4"
-	infrav1beta1 "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-gcp/controllers"
-	"sigs.k8s.io/cluster-api-provider-gcp/util/reconciler"
-	"sigs.k8s.io/cluster-api-provider-gcp/version"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+
+	infrav1alpha3 "sigs.k8s.io/cluster-api-provider-gcp/api/v1alpha3"
+	infrav1alpha4 "sigs.k8s.io/cluster-api-provider-gcp/api/v1alpha4"
+	infrav1beta1 "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
+	"sigs.k8s.io/cluster-api-provider-gcp/controllers"
+	expinfrav1 "sigs.k8s.io/cluster-api-provider-gcp/exp/api/v1beta1"
+	expcontrollers "sigs.k8s.io/cluster-api-provider-gcp/exp/controllers"
+	"sigs.k8s.io/cluster-api-provider-gcp/util/reconciler"
+	"sigs.k8s.io/cluster-api-provider-gcp/version"
 )
 
 var (
@@ -55,6 +58,7 @@ func init() {
 	_ = infrav1alpha3.AddToScheme(scheme)
 	_ = infrav1alpha4.AddToScheme(scheme)
 	_ = infrav1beta1.AddToScheme(scheme)
+	_ = expinfrav1.AddToScheme(scheme)
 	_ = clusterv1.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
@@ -129,7 +133,7 @@ func main() {
 	// Setup the context that's going to be used in controllers and for the manager.
 	ctx := ctrl.SetupSignalHandler()
 
-	if err = (&controllers.GCPMachineReconciler{
+	if err := (&controllers.GCPMachineReconciler{
 		Client:           mgr.GetClient(),
 		ReconcileTimeout: reconcileTimeout,
 		WatchFilterValue: watchFilterValue,
@@ -137,7 +141,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "GCPMachine")
 		os.Exit(1)
 	}
-	if err = (&controllers.GCPClusterReconciler{
+	if err := (&controllers.GCPClusterReconciler{
 		Client:           mgr.GetClient(),
 		ReconcileTimeout: reconcileTimeout,
 		WatchFilterValue: watchFilterValue,
@@ -145,20 +149,30 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "GCPCluster")
 		os.Exit(1)
 	}
+	// TODO(eac): feature flag gate
+	// TODO(eac): concurrency param?
+	if err := (&expcontrollers.GCPMachinePoolReconciler{
+		Client: mgr.GetClient(),
+		// TODO(eac): reconcileTimeout
+		WatchFilterValue: watchFilterValue,
+	}).SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: 1}); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GCPMachinePool")
+		os.Exit(1)
+	}
 
-	if err = (&infrav1beta1.GCPCluster{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&infrav1beta1.GCPCluster{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "GCPCluster")
 		os.Exit(1)
 	}
-	if err = (&infrav1beta1.GCPClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&infrav1beta1.GCPClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "GCPClusterTemplate")
 		os.Exit(1)
 	}
-	if err = (&infrav1beta1.GCPMachine{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&infrav1beta1.GCPMachine{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "GCPMachine")
 		os.Exit(1)
 	}
-	if err = (&infrav1beta1.GCPMachineTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&infrav1beta1.GCPMachineTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "GCPMachineTemplate")
 		os.Exit(1)
 	}

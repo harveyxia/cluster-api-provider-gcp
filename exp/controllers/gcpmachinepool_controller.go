@@ -47,7 +47,7 @@ func (r *GCPMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// TODO(eac): turn into a "util" function, shared with GetClusterFromMetadata
 	machinePool, err := getOwnerMachinePool(ctx, r.Client, gcpMachinePool.ObjectMeta)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("getting owner machinepool: %w", err)
 	}
 	if machinePool == nil {
 		log.Info("MachinePool Controller has yet to set OwnerRef")
