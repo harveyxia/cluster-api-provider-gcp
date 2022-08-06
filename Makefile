@@ -346,6 +346,7 @@ generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 		webhook
 	$(CONTROLLER_GEN) \
 		paths=./controllers/... \
+		paths=./exp/controllers/... \
 		output:rbac:dir=$(RBAC_ROOT) \
 		rbac:roleName=manager-role
 
