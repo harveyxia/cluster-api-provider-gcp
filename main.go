@@ -149,13 +149,16 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "GCPCluster")
 		os.Exit(1)
 	}
-	// TODO(eac): feature flag gate
+	// TODO(eac): feature flag gate. https://github.com/kubernetes-sigs/cluster-api-provider-gcp/pull/644
 	// TODO(eac): concurrency param?
 	if err := (&expcontrollers.GCPMachinePoolReconciler{
 		Client: mgr.GetClient(),
 		// TODO(eac): reconcileTimeout
 		WatchFilterValue: watchFilterValue,
-	}).SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: 1}); err != nil {
+	}).SetupWithManager(ctx, mgr, controller.Options{
+		MaxConcurrentReconciles: 1,
+		CacheSyncTimeout:        2 * time.Minute,
+	}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GCPMachinePool")
 		os.Exit(1)
 	}
