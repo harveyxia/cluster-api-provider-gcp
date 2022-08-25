@@ -44,6 +44,7 @@ import (
 	expcontrollers "sigs.k8s.io/cluster-api-provider-gcp/exp/controllers"
 	"sigs.k8s.io/cluster-api-provider-gcp/util/reconciler"
 	"sigs.k8s.io/cluster-api-provider-gcp/version"
+	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 )
 
 var (
@@ -59,6 +60,7 @@ func init() {
 	_ = infrav1alpha4.AddToScheme(scheme)
 	_ = infrav1beta1.AddToScheme(scheme)
 	_ = expinfrav1.AddToScheme(scheme)
+	_ = expclusterv1.AddToScheme(scheme)
 	_ = clusterv1.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }

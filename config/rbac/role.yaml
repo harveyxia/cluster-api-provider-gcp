@@ -37,7 +37,7 @@ rules:
   - cluster.x-k8s.io
   resources:
   - machinepools
-  - machines/status
+  - machinepools/status
   verbs:
   - get
   - list
