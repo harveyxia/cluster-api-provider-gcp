@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/api/compute/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -13,8 +14,10 @@ import (
 	"sigs.k8s.io/cluster-api-provider-gcp/cloud/services/compute/managedinstancegroups"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-gcp/exp/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1beta1"
 	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/predicates"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -76,8 +79,20 @@ func (r *GCPMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// initialize GCP compute service client
+	computeSvc, err := compute.NewService(context.TODO())
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create gcp compute client: %v", err)
+	}
+
 	machinePoolScope, err := scope.NewMachinePoolScope(scope.MachinePoolScopeParams{
-		Client: r.Client,
+		Client:         r.Client,
+		Logger:         &log,
+		ClusterGetter:  infraCluster,
+		MachinePool:    machinePool,
+		Cluster:        cluster,
+		GCPMachinePool: gcpMachinePool,
+		GCPServices:    scope.GCPServices{Compute: computeSvc},
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("creating scope: %w", err)
@@ -121,12 +136,30 @@ func (r *GCPMachinePoolReconciler) reconcileNormal(ctx context.Context, machineP
 
 	// TODO(eac): handle failure state
 
+	// add finalizer
 	controllerutil.AddFinalizer(machinePoolScope.GCPMachinePool, expinfrav1.MachinePoolFinalizer)
 	if err := machinePoolScope.PatchObject(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patching finalizer: %w", err)
 	}
 
-	if err := managedinstancegroups.New(machinePoolScope).Reconcile(ctx); err != nil {
+	// check that cluster infrastructure ready
+	if !machinePoolScope.Cluster.Status.InfrastructureReady {
+		machinePoolScope.Info("Cluster infrastructure is not ready yet")
+		conditions.MarkFalse(machinePoolScope.GCPMachinePool, expinfrav1.MIGReadyCondition, v1beta1.WaitingForClusterInfrastructureReason, clusterv1.ConditionSeverityInfo, "")
+		return ctrl.Result{}, nil
+	}
+
+	// check that bootstrap data is available and populated
+	if machinePoolScope.MachinePool.Spec.Template.Spec.Bootstrap.DataSecretName == nil {
+		machinePoolScope.Info("Bootstrap data secret reference is not yet available")
+		conditions.MarkFalse(machinePoolScope.GCPMachinePool, expinfrav1.MIGReadyCondition, expinfrav1.WaitingForBootstrapDataReason, clusterv1.ConditionSeverityInfo, "")
+		return ctrl.Result{}, nil
+	}
+
+	// initialize MIG client
+	migsvc := managedinstancegroups.New(machinePoolScope)
+
+	if err := migsvc.Reconcile(ctx); err != nil {
 		// TODO(eac): record event?
 		return ctrl.Result{}, fmt.Errorf("reconciling managedinstancegroup resources: %w", err)
 	}
@@ -150,7 +183,11 @@ func (r *GCPMachinePoolReconciler) reconcileDelete(ctx context.Context, machineP
 	return ctrl.Result{}, nil
 }
 
-func (r *GCPMachinePoolReconciler) getInfraCluster(ctx context.Context, cluster *clusterv1.Cluster, gcpMachinePool *expinfrav1.GCPMachinePool) (*scope.ClusterScope, error) {
+func (r *GCPMachinePoolReconciler) getInfraCluster(
+	ctx context.Context,
+	cluster *clusterv1.Cluster,
+	gcpMachinePool *expinfrav1.GCPMachinePool,
+) (*scope.ClusterScope, error) {
 	gcpCluster := &infrav1.GCPCluster{}
 	infraClusterName := client.ObjectKey{
 		Namespace: gcpMachinePool.Namespace,

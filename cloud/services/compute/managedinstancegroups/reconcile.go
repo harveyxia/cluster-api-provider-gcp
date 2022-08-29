@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/go-logr/logr"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/utils/pointer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -16,21 +17,8 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 	log.Info("reconciling managedinstancegroup resource")
 
-	bootstrapData, err := s.scope.GetBootstrapData(ctx)
-	if err != nil {
-		return fmt.Errorf("getting bootstrap data: %w", err)
-	}
-
-	// create instancetemplate
-	// TODO(eac): handle update instancetemplate
-	instanceTemplate := s.scope.InstanceTemplateSpec()
-	instanceTemplate.Properties.Metadata.Items = append(instanceTemplate.Properties.Metadata.Items, &compute.MetadataItems{
-		Key:   "user-data",
-		Value: pointer.StringPtr(bootstrapData),
-	})
-
-	if err := s.instancetemplates.Insert(ctx, meta.GlobalKey(instanceTemplate.Name), instanceTemplate); err != nil {
-		return fmt.Errorf("inserting instancetemplate: %w", err)
+	if err := s.reconcileInstanceTemplate(ctx, log); err != nil {
+		return fmt.Errorf("reconciling instance template: %w", err)
 	}
 
 	// create mig
@@ -41,6 +29,36 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	}
 
 	// TODO(eac): set fields on scope?
+
+	return nil
+}
+
+func (s *Service) reconcileInstanceTemplate(ctx context.Context, log logr.Logger) error {
+	bootstrapData, err := s.scope.GetBootstrapData(ctx)
+	if err != nil {
+		return fmt.Errorf("getting bootstrap data: %w", err)
+	}
+
+	// create instancetemplate
+	instanceTemplateSpec := s.scope.InstanceTemplateSpec()
+	instanceTemplateSpec.Properties.Metadata.Items = append(instanceTemplateSpec.Properties.Metadata.Items, &compute.MetadataItems{
+		Key:   "user-data",
+		Value: pointer.StringPtr(bootstrapData),
+	})
+
+	instanceTemplate, err := s.instancetemplates.Get(ctx, meta.GlobalKey(instanceTemplateSpec.Name))
+	// TODO determine if not found is an error or nil
+	if err != nil {
+		return fmt.Errorf("getting instance template: %w", err)
+	}
+
+	if instanceTemplate == nil {
+		if err := s.instancetemplates.Insert(ctx, meta.GlobalKey(instanceTemplateSpec.Name), instanceTemplateSpec); err != nil {
+			return fmt.Errorf("inserting instancetemplate: %w", err)
+		}
+	}
+
+	// TODO(eac): handle update instancetemplate, instance templates are immutable, design a way to create new instance templates to reflect updates
 
 	return nil
 }

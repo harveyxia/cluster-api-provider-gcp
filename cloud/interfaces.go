@@ -105,6 +105,7 @@ type MachinePoolGetter interface {
 	Client
 	Name() string
 	Zone() string
+	Region() string
 	GetBootstrapData(ctx context.Context) (string, error)
 }
 

@@ -7,12 +7,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"golang.org/x/mod/semver"
 	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2/klogr"
 	"k8s.io/utils/pointer"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,11 +26,12 @@ import (
 )
 
 type MachinePoolScope struct {
-	// TODO(eac): logger
+	logr.Logger
 
 	client      client.Client
 	patchHelper *patch.Helper
 
+	Cluster        *clusterv1.Cluster
 	ClusterGetter  cloud.ClusterGetter
 	MachinePool    *expclusterv1.MachinePool
 	GCPMachinePool *expinfrav1.GCPMachinePool
@@ -38,9 +42,10 @@ type MachinePoolScope struct {
 type MachinePoolScopeParams struct {
 	GCPServices
 	Client client.Client
-	// TODO(eac): logger
+	Logger *logr.Logger
 
 	ClusterGetter  cloud.ClusterGetter
+	Cluster        *clusterv1.Cluster
 	MachinePool    *expclusterv1.MachinePool
 	GCPMachinePool *expinfrav1.GCPMachinePool
 }
@@ -55,11 +60,19 @@ func NewMachinePoolScope(params MachinePoolScopeParams) (*MachinePoolScope, erro
 	if params.MachinePool == nil {
 		return nil, errors.New("machinepool is required when creating a MachinePoolScope")
 	}
+	if params.Cluster == nil {
+		return nil, errors.New("cluster is required when creating a MachinePoolScope")
+	}
 	if params.GCPMachinePool == nil {
 		return nil, errors.New("gcpmachinepool is required when creating a MachinePoolScope")
 	}
 	if params.GCPServices.Compute == nil {
-		return nil, errors.New("gcpservices are required when creating MachinePoolScope")
+		return nil, errors.New("gcp compute client is required when creating MachinePoolScope")
+	}
+
+	if params.Logger == nil {
+		log := klogr.New()
+		params.Logger = &log
 	}
 
 	helper, err := patch.NewHelper(params.GCPMachinePool, params.Client)
@@ -68,9 +81,10 @@ func NewMachinePoolScope(params MachinePoolScopeParams) (*MachinePoolScope, erro
 	}
 
 	return &MachinePoolScope{
-		client:      params.Client,
-		patchHelper: helper,
-
+		Logger:         *params.Logger,
+		client:         params.Client,
+		patchHelper:    helper,
+		Cluster:        params.Cluster,
 		MachinePool:    params.MachinePool,
 		ClusterGetter:  params.ClusterGetter,
 		GCPMachinePool: params.GCPMachinePool,
@@ -96,6 +110,10 @@ func (m *MachinePoolScope) Project() string {
 
 func (m *MachinePoolScope) Role() string {
 	return "node"
+}
+
+func (m *MachinePoolScope) Region() string {
+	return m.ClusterGetter.Region()
 }
 
 // TODO(eac): figure out what we need to do for regional migs
