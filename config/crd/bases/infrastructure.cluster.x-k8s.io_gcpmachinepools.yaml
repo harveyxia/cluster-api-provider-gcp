@@ -47,6 +47,7 @@ spec:
           spec:
             properties:
               gcpInstanceTemplate:
+                description: Required.
                 properties:
                   additionalLabels:
                     additionalProperties:
@@ -80,6 +81,7 @@ spec:
                   imageFamily:
                     type: string
                   instanceType:
+                    description: Required.
                     type: string
                   ipForwarding:
                     description: IPForwarding represents the IP forwarding configuration
@@ -111,12 +113,16 @@ spec:
                     type: object
                   subnet:
                     type: string
+                required:
+                - instanceType
                 type: object
               targetSize:
+                description: Required.
                 format: int32
                 type: integer
             required:
             - gcpInstanceTemplate
+            - targetSize
             type: object
           status:
             properties:

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	gcpcloud "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"golang.org/x/mod/semver"
@@ -15,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2/klogr"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/cluster-api-provider-gcp/util/hash"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -128,12 +131,23 @@ func (m *MachinePoolScope) Zone() string {
 	return zones[0]
 }
 
-func (m *MachinePoolScope) InstanceTemplateSpec() *compute.InstanceTemplate {
+func (m *MachinePoolScope) InstanceTemplateSpec(ctx context.Context) (*compute.InstanceTemplate, error) {
+	bootstrapData, err := m.GetBootstrapData(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting bootstrap data: %w", err)
+	}
+
 	template := &compute.InstanceTemplate{
-		// TODO(eac): figure out version/fingerprinting of instance templates
-		Name: m.Name(),
 		Properties: &compute.InstanceProperties{
-			MachineType: path.Join("zones", m.Zone(), "machineTypes", m.GCPMachinePool.Spec.GCPInstanceTemplate.InstanceType),
+			Metadata: &compute.Metadata{
+				Items: []*compute.MetadataItems{
+					{
+						Key:   "user-data",
+						Value: pointer.StringPtr(bootstrapData),
+					},
+				},
+			},
+			MachineType: m.GCPMachinePool.Spec.GCPInstanceTemplate.InstanceType,
 			Tags: &compute.Tags{
 				Items: append(
 					m.GCPMachinePool.Spec.GCPInstanceTemplate.AdditionalNetworkTags,
@@ -165,7 +179,29 @@ func (m *MachinePoolScope) InstanceTemplateSpec() *compute.InstanceTemplate {
 	template.Properties.ServiceAccounts = append(template.Properties.ServiceAccounts, m.InstanceServiceAccountsSpec())
 	template.Properties.NetworkInterfaces = append(template.Properties.NetworkInterfaces, m.InstanceNetworkInterfaceSpec())
 
-	return template
+	// instance templates are immutable, so we generate a unique name based on a hash of the spec contents
+	name, err := instanceTemplateName(template)
+	if err != nil {
+		return nil, fmt.Errorf("generating instance template name: %w", err)
+	}
+	template.Name = name
+
+	return template, nil
+}
+
+// return a  63 char, RFC1035 compliant name
+func instanceTemplateName(template *compute.InstanceTemplate) (string, error) {
+	raw, err := template.MarshalJSON()
+	if err != nil {
+		return "", fmt.Errorf("marshalling instance template spec to json: %w", err)
+	}
+	hash, err := hash.Base36TruncatedHash(string(raw), 62)
+	if err != nil {
+		return "", fmt.Errorf("hashing instance template spec: %w", err)
+	}
+	// guarantee that name starts with a letter (name must be 1-63 characters long and
+	// match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?`)
+	return "a" + hash, nil
 }
 
 func (m *MachinePoolScope) InstanceImageSpec() *compute.AttachedDisk {
@@ -193,7 +229,7 @@ func (m *MachinePoolScope) InstanceImageSpec() *compute.AttachedDisk {
 		Boot:       true,
 		InitializeParams: &compute.AttachedDiskInitializeParams{
 			DiskSizeGb:  m.GCPMachinePool.Spec.GCPInstanceTemplate.RootDeviceSize,
-			DiskType:    path.Join("zones", m.Zone(), "diskTypes", string(diskType)),
+			DiskType:    string(diskType),
 			SourceImage: sourceImage,
 		},
 	}
@@ -247,16 +283,20 @@ func (m *MachinePoolScope) InstanceNetworkInterfaceSpec() *compute.NetworkInterf
 	return networkInterface
 }
 
-func (m *MachinePoolScope) InstanceGroupManagerSpec() *compute.InstanceGroupManager {
+func (m *MachinePoolScope) InstanceGroupManagerSpec(ctx context.Context) (*compute.InstanceGroupManager, error) {
+	template, err := m.InstanceTemplateSpec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting instance template name: %w", err)
+	}
+
 	igm := &compute.InstanceGroupManager{
 		Name:             m.Name(),
 		BaseInstanceName: m.Name(),
-		// TODO(eac): figure out how to do template versions ?
-		InstanceTemplate: m.Name(),
+		InstanceTemplate: gcpcloud.RelativeResourceName(m.Project(), "instanceTemplates", meta.GlobalKey(template.Name)),
 		TargetSize:       int64(m.GCPMachinePool.Spec.TargetSize),
 	}
 
-	return igm
+	return igm, nil
 }
 
 func (m *MachinePoolScope) GetBootstrapData(ctx context.Context) (string, error) {

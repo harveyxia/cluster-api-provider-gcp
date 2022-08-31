@@ -149,7 +149,7 @@ func (r *GCPMachinePoolReconciler) reconcileNormal(ctx context.Context, machineP
 		return ctrl.Result{}, nil
 	}
 
-	// check that bootstrap data is available and populated
+	//check that bootstrap data is available and populated
 	if machinePoolScope.MachinePool.Spec.Template.Spec.Bootstrap.DataSecretName == nil {
 		machinePoolScope.Info("Bootstrap data secret reference is not yet available")
 		conditions.MarkFalse(machinePoolScope.GCPMachinePool, expinfrav1.MIGReadyCondition, expinfrav1.WaitingForBootstrapDataReason, clusterv1.ConditionSeverityInfo, "")

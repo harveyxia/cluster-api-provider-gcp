@@ -13,7 +13,8 @@ const (
 )
 
 type GCPInstanceTemplate struct {
-	InstanceType string `json:"instanceType,omitempty"`
+	// Required.
+	InstanceType string `json:"instanceType"`
 
 	AdditionalNetworkTags []string `json:"additionalNetworkTags,omitempty"`
 
@@ -44,8 +45,10 @@ type GCPInstanceTemplate struct {
 }
 
 type GCPMachinePoolSpec struct {
-	TargetSize int32 `json:"targetSize,omitempty"`
+	// Required.
+	TargetSize int32 `json:"targetSize"`
 
+	// Required.
 	GCPInstanceTemplate GCPInstanceTemplate `json:"gcpInstanceTemplate"`
 }
 

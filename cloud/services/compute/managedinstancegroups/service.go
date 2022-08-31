@@ -30,8 +30,8 @@ type instancegroupmanagersInterface interface {
 
 type Scope interface {
 	cloud.MachinePool
-	InstanceTemplateSpec() *compute.InstanceTemplate
-	InstanceGroupManagerSpec() *compute.InstanceGroupManager
+	InstanceTemplateSpec(ctx context.Context) (*compute.InstanceTemplate, error)
+	InstanceGroupManagerSpec(ctx context.Context) (*compute.InstanceGroupManager, error)
 }
 
 type Service struct {

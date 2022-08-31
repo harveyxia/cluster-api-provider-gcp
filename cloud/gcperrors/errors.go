@@ -19,6 +19,7 @@ package gcperrors
 
 import (
 	"net/http"
+	"strings"
 
 	"google.golang.org/api/googleapi"
 )
@@ -38,6 +39,43 @@ func IsNotFound(err error) bool {
 // Otherwise return the actual error.
 func IgnoreNotFound(err error) error {
 	if IsNotFound(err) {
+		return nil
+	}
+
+	return err
+}
+
+// IsAlreadyExists reports whether err is a Google API error
+// with http.StatusConflict.
+func IsAlreadyExists(err error) bool {
+	if err == nil {
+		return false
+	}
+	ae, ok := err.(*googleapi.Error)
+
+	return ok && ae.Code == http.StatusConflict
+}
+
+// IgnoreAlreadyExists ignores Google API already exists error and returns nil.
+// Otherwise return the actual error.
+func IgnoreAlreadyExists(err error) error {
+	if IsAlreadyExists(err) {
+		return nil
+	}
+
+	return err
+}
+
+func IsInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+	ae, ok := err.(*googleapi.Error)
+
+	return ok && ae.Code == http.StatusBadRequest && strings.Contains(ae.Message, "RESOURCE_IN_USE_BY_ANOTHER_RESOURCE")
+}
+func IgnoreIsInUse(err error) error {
+	if IsInUse(err) {
 		return nil
 	}
 
