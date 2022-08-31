@@ -15,18 +15,16 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	log.Info("reconciling managedinstancegroup resource")
 
 	if err := s.reconcileInstanceTemplate(ctx); err != nil {
-		return fmt.Errorf("reconciling instance template: %w", err)
+		return &InstanceTemplateError{Err: err}
 	}
 
 	// create igm
-	// TODO(eac): handle create/update
 	igm, err := s.scope.InstanceGroupManagerSpec(ctx)
 	if err != nil {
-		return fmt.Errorf("building instance group manager spec: %w", err)
+		return &InstanceGroupError{Err: fmt.Errorf("building instance group manager spec: %w", err)}
 	}
-
 	if err := s.instancegroupmanagers.Insert(ctx, meta.ZonalKey(igm.Name, s.scope.Zone()), igm); gcperrors.IgnoreAlreadyExists(err) != nil {
-		return fmt.Errorf("inserting instancegroupmanager: %w", err)
+		return &InstanceGroupError{Err: fmt.Errorf("inserting instancegroupmanager: %w", err)}
 	}
 
 	// TODO(eac): set fields on scope?

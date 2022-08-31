@@ -325,7 +325,10 @@ func (m *MachinePoolScope) PatchObject() error {
 	return m.patchHelper.Patch(
 		context.TODO(),
 		m.GCPMachinePool,
-		// TODO(eac): withOwnedConditions?
+		patch.WithOwnedConditions{Conditions: []clusterv1.ConditionType{
+			expinfrav1.MIGReadyCondition,
+			expinfrav1.InstanceTemplateReadyCondition,
+		}},
 	)
 }
 

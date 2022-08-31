@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/pkg/errors"
 	"google.golang.org/api/compute/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +16,6 @@ import (
 	"sigs.k8s.io/cluster-api-provider-gcp/cloud/services/compute/managedinstancegroups"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-gcp/exp/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1beta1"
 	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -99,7 +100,16 @@ func (r *GCPMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	defer func() {
-		//conditions.SetSummary(machinePoolScope.GCPMachinePool)// set conditions?
+		conditions.SetSummary(machinePoolScope.GCPMachinePool,
+			conditions.WithConditions(
+				expinfrav1.MIGReadyCondition,
+				expinfrav1.InstanceTemplateReadyCondition,
+			),
+			conditions.WithStepCounterIfOnly(
+				expinfrav1.MIGReadyCondition,
+				expinfrav1.InstanceTemplateReadyCondition,
+			),
+		)
 
 		if err := machinePoolScope.Close(); err != nil && reterr == nil {
 			reterr = err
@@ -161,13 +171,53 @@ func (r *GCPMachinePoolReconciler) reconcileNormal(ctx context.Context, machineP
 
 	if err := migsvc.Reconcile(ctx); err != nil {
 		// TODO(eac): record event?
+		var templateErr *managedinstancegroups.InstanceTemplateError
+		if errors.As(err, &templateErr) {
+			conditions.MarkFalse(machinePoolScope.GCPMachinePool, expinfrav1.InstanceTemplateReadyCondition, expinfrav1.InstanceTemplateNotReadyReason, clusterv1.ConditionSeverityError, "")
+		}
+		var instanceGroupErr *managedinstancegroups.InstanceGroupError
+		if errors.As(err, &instanceGroupErr) {
+			conditions.MarkFalse(machinePoolScope.GCPMachinePool, expinfrav1.MIGReadyCondition, expinfrav1.MIGReadyNotReadyReason, clusterv1.ConditionSeverityError, "")
+		}
 		return ctrl.Result{}, fmt.Errorf("reconciling managedinstancegroup resources: %w", err)
 	}
 
-	// TODO(eac): set conditions?
-	// TODO(eac):     ^ intermediate condition for instance template readiness
+	replicas, err := getInstanceGroupReplicas(ctx, machinePoolScope)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("getting instance group replicas: %w", err)
+	}
+	machinePoolScope.GCPMachinePool.Status.Ready = true
+	machinePoolScope.GCPMachinePool.Status.Replicas = int32(replicas)
+
+	conditions.MarkTrue(machinePoolScope.GCPMachinePool, expinfrav1.MIGReadyCondition)
+	conditions.MarkTrue(machinePoolScope.GCPMachinePool, expinfrav1.InstanceTemplateReadyCondition)
 
 	return ctrl.Result{}, nil
+}
+
+// TODO(harveyxia) do we need this? the list instances call only reports instances extant
+// at the time of the call, and is not guaranteed to be updated if/when new instances get spun up
+func getInstanceGroupReplicas(
+	ctx context.Context,
+	scope *scope.MachinePoolScope,
+) (int, error) {
+	igm, err := scope.InstanceGroupManagerSpec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("building instance group manager spec: %w", err)
+	}
+
+	instances, err := scope.Cloud().InstanceGroups().ListInstances(
+		ctx,
+		meta.ZonalKey(igm.Name, scope.Zone()),
+		&compute.InstanceGroupsListInstancesRequest{
+			InstanceState: "", // TODO(harvey) only grab running instances?
+		},
+		nil,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("fetching instances for instance group: %w", err)
+	}
+	return len(instances), nil
 }
 
 func (r *GCPMachinePoolReconciler) reconcileDelete(ctx context.Context, machinePoolScope *scope.MachinePoolScope) (ctrl.Result, error) {
